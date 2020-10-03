@@ -1,6 +1,8 @@
 # Layer-Height-Optmizer
 Smart Layer Height based on horizontal surfaces (.3mf files)
 
+Usage:  LH-optimizer.py <file.3mf> <default_layer_height_in_mm> [max_layer_height_in_mm]
+
 It's quite annoying to be forced to design objects with the flat surfaces height based on the layer height at which they will be printed (Specially now that the layer height table has been removed)
 
 (e.g. slicing a 10,1 mm high cube with 0,20 mm layer height leads to a 10.2 mm high cube)
@@ -17,4 +19,3 @@ New version of the script, with some improvements:
 
     Optional Parameter: max_layer_height (usually you want to set it at 0.75*nozzle-width)
 
-Usage:  NEW-LH-optimizer.py <file.3mf> <default_layer_height_in_mm> [max_layer_height_in_mm]
