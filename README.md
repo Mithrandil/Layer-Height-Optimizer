@@ -1,4 +1,4 @@
-# Layer-Height-Optmizer
+# Layer-Height-Optimizer
 Smart Layer Height based on horizontal surfaces (.3mf files)
 
 Usage:  LH-optimizer.py <file.3mf> <default_layer_height_in_mm> [max_layer_height_in_mm]
