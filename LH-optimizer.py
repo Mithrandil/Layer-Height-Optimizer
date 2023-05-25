@@ -12,12 +12,12 @@ from os.path import basename, dirname
 
 import tempfile
 
-debug = False
+import argparse
 
 #set to 2 to get 0.01 mm approximation
 round_to = 2
-first_lh_mm = 0.2
-min_lh = 0.05
+first_layer_height = 0.2
+min_layer_height = 0.05
 
 # Function to find equation of plane. 
 #def calculate_normal(x1, y1, z1, x2, y2, z2, x3, y3, z3):  
@@ -47,65 +47,134 @@ class lh_List:
     self.list_z = []
     self.list_lh = []
     self.max_z = max_z
+    self.previous_lh = 0.0
+    self.single_perimeter_list = []
     
   def add(self, min_z, lh):
     min_z = round(min_z, 6)
     lh = round(lh, 6)
     if min_z in self.list_z:
       print("Error, this min_z was inserted already (", min_z , ")")
+      #just ignore duplicates if args.single_perimeter == True:
+      if args.single_perimeter == True:
+        return
       quit()
-    if len(self.list_lh) == 0 or lh != self.list_lh[-1]:
+    ''' add a layer to the list if 
+        it's the first one, 
+        or if the thickness is different than the previous one, 
+        or args.single_perimeter == True
+    '''
+    if len(self.list_lh) == 0 or lh != self.list_lh[-1] or args.single_perimeter == True:
+      if min_z-self.previous_lh > 0 and args.single_perimeter == True:
+          self.list_z.append(round(min_z-self.previous_lh, 6))
+          self.single_perimeter_list.append(round(min_z-self.previous_lh, 6))
+          if args.half_layer and self.previous_lh/2 > min_layer_height:
+            self.list_lh.append(self.previous_lh/2)
+          else:
+            self.list_lh.append(self.previous_lh)          
       self.list_z.append(min_z)
       self.list_lh.append(lh)
+      self.previous_lh = lh
       
   def getList(self):
     list_tmp = []
     z = self.list_z + [self.max_z]
     for i in range(0, len(self.list_lh)):
       list_tmp.append([z[i], z[i+1], self.list_lh[i]])
+    if args.single_perimeter == True:
+        list_tmp[-1] = [z[i], z[i+1]-self.list_lh[i], self.list_lh[i]]
+        self.single_perimeter_list.append(list_tmp[-1][1])
+        list_tmp.append([list_tmp[-1][1], self.max_z, self.list_lh[i]])
     return list_tmp
 
-if len(sys.argv) < 3:
-  print("Usage: ", sys.argv[0], " <file.3mf> <default_layer_height_in_mm> [max_layer_height_in_mm]")
-  print("Example: ", sys.argv[0], " myfile.3mf 0.20 0.25")
-  quit()
+if len(sys.argv) < 2:
+    print("Usage: ", sys.argv[0], " [-s] [-hl] [-d] <file.3mf> [--avg <default_layer_height_in_mm>] [--min <min_layer_height_in_mm>] [--max <max_layer_height_in_mm>]")
+    print("Example: ", sys.argv[0], " -s myfile.3mf --avg 0.20 --max 0.25")
+    quit()
   
-lh_mm = float(sys.argv[2])
+# Crea un oggetto parser
+parser = argparse.ArgumentParser()
 
-if len(sys.argv) == 4:
-    max_lh = float(sys.argv[3])
-else:
-    max_lh = None
+# Aggiungi un argomento di tipo flag
+parser.add_argument('-s', '--single-perimeter', action='store_true', help='Single Perimeter Top')
+parser.add_argument('-hl', '--half-layer', action='store_true', help='Half LayerHeight Top')
+parser.add_argument('-d', '--debug', action='store_true', help='Debug')
+
+# Aggiungi argomenti di tipo float
+parser.add_argument('--min', type=float, default=0.0, help='Valore minimo')
+parser.add_argument('--max', type=float, default=0.0, help='Valore massimo')
+parser.add_argument('--avg', type=float, default=0.0, help='Valore massimo')
+
+# Aggiungi l'argomento per il nome del file
+parser.add_argument('file', help='Nome del file')
+
+# Parsa gli argomenti della riga di comando
+args = parser.parse_args()
+
+# Valuta gli argomenti float
+min_layer_height = args.min
+max_layer_height  = args.max
+layer_height = args.avg
+
+# Ottieni il nome del file
+file_name = args.file
 
 with tempfile.TemporaryDirectory() as tmpdirname:
-    with zipfile.ZipFile(sys.argv[1], 'r') as zip_ref:
+    with zipfile.ZipFile(file_name, 'r') as zip_ref:
         zip_ref.extractall(tmpdirname)
 
+    # Carica il file di configurazione
+    with open(tmpdirname+'/Metadata/Slic3r_PE.config', 'r') as config_file:
+        lines = config_file.readlines()
 
-    if lh_mm < 0.01 or lh_mm > 2:
+        for line in lines:
+            if min_layer_height == 0.0 and line.startswith("; min_layer_height"):
+                min_layer_height = float(line.split(" = ")[1])
+            elif line.startswith("; first_layer_height"):
+                first_layer_height = float(line.split(" = ")[1])
+            elif layer_height == 0.0 and line.startswith("; layer_height"):
+                layer_height = float(line.split(" = ")[1])
+            elif max_layer_height == 0.0 and line.startswith("; max_layer_height"):
+                max_layer_height = float(line.split(" = ")[1])
+
+    if layer_height < 0.01 or layer_height > 2:
         print("Error, layer_height out of limits")
-        print("Usage: ", sys.argv[0], " <file.3mf> <default_layer_height_in_mm> [max_layer_height_in_mm]")
-        print("Example: ", sys.argv[0], " myfile.3mf 0.20 0.25")
+        print("Usage: ", sys.argv[0], " [-s] [-hl] [-d] <file.3mf> [--avg <default_layer_height_in_mm>] [--min <min_layer_height_in_mm>] [--max <max_layer_height_in_mm>]")
+        print("Example: ", sys.argv[0], " -s myfile.3mf --avg 0.20 --max 0.25")
         quit()
 
     # better not to change z_step_mm it, 
     # some other approximations rely on this value to be set to 0.01 mm
     # changing it would require rewrite of other code
     z_step_mm = 0.01
-
-    lh = lh_mm * 100
-    first_lh = first_lh_mm * 100
+    
+    first_lh = first_layer_height * 100
     z_step = z_step_mm * 100
 
     print("--------------------------------------------------------")
     print("Optimal Layer Height calculator with 0.01 mm approximation, parameters used:")
-    print("First Layer Height: ", first_lh_mm, " mm", " (will not be changed)");
-    print("Default Layer Height: ", lh_mm, " mm");
+    print("First Layer Height: ", first_layer_height, " mm");
+    print("Default Layer Height: ", layer_height, " mm");
+    print("Min Layer Height: ", min_layer_height, " mm");
+    print("Max Layer Height: ", max_layer_height, " mm");
     print("Z-Steps and Height Approximation: ", z_step_mm, " mm");
     print("--------------------------------------------------------")
 
     #-------------NEW-----------------------------------------
+    
+    treeConfig = ET.parse(tmpdirname+'/Metadata/Slic3r_PE_model.config')
+    rootConfig = treeConfig.getroot()
 
+    # Itera sugli oggetti e estrai layer_height
+    '''
+    for obj in rootConfig.iter('object'):
+        layer_height_elem = obj.find("./metadata[@key='layer_height']")
+        if layer_height_elem is not None:
+            layer_height = layer_height_elem.get('value')
+            print(f"Layer Height: {layer_height}")
+        else:
+            print("Layer Height non disponibile per questo oggetto")
+    '''
     # -----------------------------------------------------------------------------------------------
     # create the XML file structure for the .3mf file
     # not really needed, but useful for complicated meshes
@@ -136,8 +205,25 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                 if mesh == None:
                     continue
                 objid = model.attrib['id']
+
+
                 print(" ")
                 print("OBJECT-", objid, '--------------------------------------------------\n')
+
+                lh = layer_height * 100
+                # Itera sugli oggetti e estrai layer_height
+                obj = rootConfig.find(f"./object[@id='{objid}']")
+                if obj is not None:
+                    layer_height_elem = obj.find("./metadata[@key='layer_height']")
+                    if layer_height_elem is not None:
+                        lh = 100 * float(layer_height_elem.get('value'))
+                        objname_elem = obj.find("./metadata[@key='name']")
+                        if objname_elem is not None:
+                            objname = objname_elem.get('value')
+                        else:
+                            objname = objid
+                        print(f"\"{objname}\" Default Layer Height: {lh/100} mm\n")
+
                 vertices = mesh.find('{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}vertices')
 
                 set_z = set()
@@ -176,7 +262,7 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                 step_list = sorted(step_set)
                 print("Steps: ", [x / 100 for x in step_list] , "\n")
 
-                if debug == True:
+                if args.debug == True:
                     print(step_list)
 
                 
@@ -185,7 +271,7 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                 while calculate_lh:
                     ls_list = lh_List(round(absolute_max_z, round_to))
                     for i in range(0, len(step_list)-1):
-                        if debug == True:
+                        if args.debug == True:
                             print("--------------------------------------------")
                         max_z = step_list[i+1]
                         min_z = step_list[i]
@@ -197,71 +283,77 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                         if layers == 0:
                             layers = 1
                         
-                        if debug == True:
+                        if args.debug == True:
                             print(i, " layers: ", layers)
                         
                         default_printed_thickness = lh * layers
                         
-                        if debug == True:
+                        if args.debug == True:
                             print(i, " thickness: ", thickness / 100)
                             print(i, " default_printed_thickness: ", default_printed_thickness/100)
                         
                         total_correction = thickness - default_printed_thickness 
 
                         
-                        if debug == True:
+                        if args.debug == True:
                             print(i, " total_correction: ", total_correction/100)
                         
                         avg_correction = total_correction / layers
                         
-                        if debug == True:
+                        if args.debug == True:
                             print(i, " avg_correction: ", avg_correction/100)
                         
                         min_correction = floor(avg_correction)
                         
-                        if debug == True:
+                        if args.debug == True:
                             print(i, " min_correction: ", min_correction/100)
                         
                         min_corrected_lh = lh + min_correction
                         
                         residual_correction = (total_correction - (min_correction*layers))
                         
-                        if debug == True:
+                        if args.debug == True:
                             print(i, " residual_correction: ", residual_correction/100)
                         
                         layers_with_increased_correction = round(residual_correction / z_step)
                         
-                        if debug == True:
+                        if args.debug == True:
                             print(i, " layers_with_increased_correction: ", layers_with_increased_correction)
                         
                         layers_with_min_correction = layers - layers_with_increased_correction
                         
                         intermediate_z = min_z + (layers_with_min_correction * min_corrected_lh)
                         
-                        if debug == True:
+                        if args.debug == True:
                             print(i, " intermediate_z: ", intermediate_z/100)
                             
-                        if debug == True:
+                        if args.debug == True:
                             print("------------------------------------------------------------> ", min_z/100, " --> ", intermediate_z/100 , " - ", min_corrected_lh/100)
                         
                         #i.e. layers_with_min_correction != 0
                         if min_z != intermediate_z:
+                            if args.debug == True:
+                                    print("------------------------------> ", "min_z != intermediate_z --- step_list[i]/100: ", step_list[i]/100)
+                                    print("------------------------------> ", "min_z/100: ", min_z/100)
+                                    print("------------------------------> ", "min_corrected_lh/100: ", min_corrected_lh/100)
                             ls_list.add(min_z/100, min_corrected_lh/100)
                         
                         if residual_correction > 0:
+                            if args.debug == True:
+                                print("------------------------------> ", "residual correction:", residual_correction)
                             max_correction = min_correction + (residual_correction / abs(residual_correction))
                             #print(i, " max_correction: ", max_correction)
                             max_corrected_lh = lh + max_correction
                             
                             ls_list.add(intermediate_z/100, max_corrected_lh/100)
                             
-                            if debug == True:
+                            if args.debug == True:
                                 print("------------------------------------------------------------> ", intermediate_z/100, " --> ", max_z/100 , " - ", max_corrected_lh/100)
                             
                     calculate_lh = False  
-                    if max_lh:
+                    if max_layer_height :
                         for line in ls_list.getList():
-                            if line[2] > max_lh:
+                            if line[2] > max_layer_height :
                                 lh = lh - 1
                                 print("Max Layer Height Exceeded,\nRecalculate with Default Layer Height ", lh/100, '\n')
                                 calculate_lh = True
@@ -269,13 +361,16 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                     
                 #print the list
                 for line in ls_list.getList():
-                    print("------------------------------------------------------------> " if debug == True else "", line[0], " --> ", line[1], " - ", line[2],
-                    "   <------   WARNING! Layer Height < "+str(min_lh)+" mm" if line[2] < min_lh else "",
-                    "   <------   Layer Height > "+str(lh_mm)+" mm" if line[2] > lh_mm else "",)
+                    print("X-----------------------------------------------------------> " if args.debug == True else "", line[0], " --> ", line[1], " - ", line[2],
+                    "   <------   WARNING! Layer Height < "+str(min_layer_height)+" mm" if line[2] < min_layer_height else "",
+                    "   <------   Layer Height > "+str(layer_height)+" mm" if line[2] > float(layer_height) else "",)
 
                 object = ET.SubElement(objects, 'object')
                 object.set('id',objid)
 
+                # <option opt_key="layer_height">0.2</option>    
+                # <option opt_key="perimeters">1</option>
+                
                 for line in ls_list.getList():
 
                     rng = ET.SubElement(object, 'range')
@@ -289,14 +384,20 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                     option2= ET.SubElement(rng, 'option')
                     option2.set('opt_key','layer_height')
                     option2.text = str(line[2])
+                    
+                    if line[0] in ls_list.single_perimeter_list:
+                        option3= ET.SubElement(rng, 'option')
+                        option3.set('opt_key','perimeters')
+                        option3.text = '1'
+                    
 
     outtree.write(tmpdirname+"/Metadata/Prusa_Slicer_layer_config_ranges.xml", xml_declaration=True, encoding='utf-8')
 
     # create a ZipFile object
-    with zipfile.ZipFile(os.path.join(dirname(sys.argv[1]),'OPTLH_'+basename(sys.argv[1])), 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zipObj:
+    with zipfile.ZipFile(os.path.join(dirname(file_name),'OPTLH_'+basename(file_name)), 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zipObj:
         zipObj.write(tmpdirname+'/[Content_Types].xml', '[Content_Types].xml')
         addDirToZip(zipObj, tmpdirname, '_rels')
         addDirToZip(zipObj, tmpdirname, '3D')
         addDirToZip(zipObj, tmpdirname, 'Metadata')
     
-    print('\n\nCreated File: "', os.path.join(dirname(sys.argv[1]),'OPTLH_'+basename(sys.argv[1])), '"')
+    print('\n\nCreated File: "', os.path.join(dirname(file_name),'OPTLH_'+basename(file_name)), '"')
