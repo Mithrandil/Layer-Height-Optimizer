@@ -27,11 +27,11 @@ def setShrinkage(params):
     if params.shrinkage != 0:
         shrink[0] = params.shrinkage
         shrink[1] = params.shrinkage
-    elif params.auto_shrinkage_compensation:
+    #elif params.auto_shrinkage_compensation:
         # calcola shrink in base al polimero, da fare
         # shrink = 0
-        shrink[0] = 0.0
-        shrink[1] = 0.0
+    #    shrink[0] = 0.0
+    #   shrink[1] = 0.0
     elif params.petg:
         shrink[0] = 0.198
         shrink[1] = 0.376
@@ -478,8 +478,11 @@ with tempfile.TemporaryDirectory() as tmpdirname:
 
                 if args.avg > 0.0 or not args.optimize:
                     layer_steps_list.append(calculate_layer_heights(lh, absolute_max_z))
-                    min_layer_difference = round(
-                        max(layer_steps_list[-1].list_lh[1:]) - min(layer_steps_list[-1].list_lh[1:]), round_to)
+                    if len(layer_steps_list[-1].list_lh[1:]) > 0:
+                        min_layer_difference = round(
+                            max(layer_steps_list[-1].list_lh[1:]) - min(layer_steps_list[-1].list_lh[1:]), round_to)
+                    else:
+                        min_layer_difference = 0
                     max_optimum_avg_layer_height_index = len(layer_steps_list) - 1
                     max_optimum_avg_layer_height = avg_layer_height * 100
 
