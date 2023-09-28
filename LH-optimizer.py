@@ -47,7 +47,7 @@ def setShrinkage(params):
 def calculate_layer_heights(layer_height, max_z):
     calculate_lh = True
     while calculate_lh:
-        lh_list = LayerHeightList(round(max_z, round_to))
+        lh_list = LayerHeightList(round(max_z/100, round_to))
         for i in range(0, len(step_list) - 1):
             if args.debug:
                 print("--------------------------------------------")
