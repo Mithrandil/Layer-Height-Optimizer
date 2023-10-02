@@ -27,9 +27,9 @@ def setShrinkage(params):
     if params.shrinkage != 0:
         shrink[0] = params.shrinkage
         shrink[1] = params.shrinkage
-    #elif params.auto_shrinkage_compensation:
-        # calcola shrink in base al polimero, da fare
-        # shrink = 0
+    # elif params.auto_shrinkage_compensation:
+    # calcola shrink in base al polimero, da fare
+    # shrink = 0
     #    shrink[0] = 0.0
     #   shrink[1] = 0.0
     elif params.petg:
@@ -44,16 +44,23 @@ def setShrinkage(params):
     return shrink
 
 
-def calculate_layer_heights(layer_height, max_z):
+def calculate_layer_heights(layer_height, z_max, local_step_list):
     calculate_lh = True
+    lh_list = None
     while calculate_lh:
-        lh_list = LayerHeightList(round(max_z/100, round_to))
-        for i in range(0, len(step_list) - 1):
+        if args.debug:
+            print("calculate_layer_heights --> z_max: ", z_max)
+            print("calculate_layer_heights --> local_step_list: ", local_step_list)
+        lh_list = LayerHeightList(round(z_max, round_to))
+        for i in range(0, len(local_step_list) - 1):
             if args.debug:
                 print("--------------------------------------------")
-            max_z = step_list[i + 1]
-            min_z = step_list[i]
+            max_z = local_step_list[i + 1]
+            min_z = local_step_list[i]
             thickness = (max_z - min_z)
+
+            if args.debug:
+                print("calculate_layer_heights --> min_z: ", min_z, "   max_z: ", max_z)
 
             # calculate ho many cents should be corrected
 
@@ -111,8 +118,8 @@ def calculate_layer_heights(layer_height, max_z):
             # i.e. layers_with_min_correction != 0
             if min_z != intermediate_z:
                 if args.debug:
-                    print("------------------------------> ", "min_z != intermediate_z --- step_list[i]/100: ",
-                          step_list[i] / 100)
+                    print("------------------------------> ", "min_z != intermediate_z --- local_step_list[i]/100: ",
+                          local_step_list[i] / 100)
                     print("------------------------------> ", "min_z/100: ", min_z / 100)
                     print("------------------------------> ", "min_corrected_lh/100: ", min_corrected_lh / 100)
                 lh_list.add(min_z / 100, min_corrected_lh / 100)
@@ -144,7 +151,9 @@ def calculate_layer_heights(layer_height, max_z):
                 print(str(layer_height / 100) + " - max-lh_diff:" + str(
                     round(max(lh_list.list_lh[1:]) - min(lh_list.list_lh[1:]), round_to)) + " - min:" + str(
                     min(lh_list.list_lh[1:])) + " max:" + str(max(lh_list.list_lh[1:])))
-            return lh_list
+    if args.debug:
+        print("calculate_layer_heights --> lh_list.list_lh: ",  lh_list.list_lh)
+    return lh_list
 
 
 # Function to find equation of plane.
@@ -176,6 +185,8 @@ class LayerHeightList:
         self.list_z = []
         self.list_lh = []
         self.max_z = max_z
+        if args.debug:
+            print("z_init: ", max_z)
         self.previous_lh = 0.0
         self.single_perimeter_list = []
 
@@ -188,7 +199,7 @@ class LayerHeightList:
             print("Error, this min_z was inserted already (", min_z, ")")
             quit()
 
-        # gia verificato che serve anche oer single perimeter (altrimenti se la layer_height è uguale alla layer_height
+        # gia verificato che serve anche per single perimeter (altrimenti se la layer_height è uguale alla layer_height
         # precedente non inserisce lo step e poi non puo fare il single perimeter)
         # if len(self.list_lh) == 0 or layer_height != self.list_lh[-1] or args.single_perimeter or args.thin_top_layer:
         if len(self.list_lh) == 0 or layer_height != self.list_lh[-1] or args.single_perimeter or args.half_layer or args.thin_top_layer:
@@ -200,6 +211,8 @@ class LayerHeightList:
     def get_list(self):
         list_tmp = []
         z = self.list_z + [self.max_z]
+        if args.debug:
+            print("z: ", z)
         for i in range(0, len(self.list_lh)):
             list_tmp.append([z[i], z[i + 1], self.list_lh[i]])
 
@@ -207,8 +220,16 @@ class LayerHeightList:
             last_block_end = list_tmp[-1][1]
             last_layer_height = list_tmp[-1][2]
 
+            if args.debug:
+                print("get_list --> last_block_start: ", last_block_start)
+                print("get_list --> last_block_end: ", last_block_end)
+
             # add a last single layer if args.single_perimeter == True and there is enough thickness
             if args.single_perimeter or args.half_layer:
+                if args.debug:
+                    print("args.single_perimeter: ", args.single_perimeter)
+                    print("last_block_end: ", last_block_end)
+
                 if not args.thin_top_layer:
                     if round(last_block_end - last_block_start, round_to) >= round((2 * last_layer_height), round_to):
                         list_tmp[-1][1] = round(last_block_end - last_layer_height, round_to)
@@ -221,7 +242,11 @@ class LayerHeightList:
                         list_tmp[-1][2] = new_layer_height
                     if args.single_perimeter:
                         self.single_perimeter_list.append(round(last_block_end - last_layer_height, round_to))
-
+        if args.debug:
+            print("list_tmp: ", list_tmp)
+            print("top_layers: ", top_layers)
+            print("round(last_block_end, round_to): ", round(last_block_end, round_to))
+            print("single_perimeter_list: ", self.single_perimeter_list)
         return list_tmp
 
 
@@ -383,6 +408,7 @@ with tempfile.TemporaryDirectory() as tmpdirname:
 
     for elem in root:
         for model in elem:
+            top_layers = []
             if 'type' in model.attrib and model.attrib['type'] == 'model':
                 mesh = model.find('{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}mesh')
                 if mesh is None:
@@ -421,11 +447,13 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                     set_z.add(tempvert[2])
 
                 absolute_max_z = max(set_z)
+                absolute_max_z_cents = round(absolute_max_z, round_to)*100
                 absolute_min_z = min(set_z)
+                absolute_min_z_cents = round(absolute_min_z, round_to)*100
 
                 print("z range= ", round(absolute_min_z, round_to), 'mm - ', round(absolute_max_z, round_to), "mm\n")
 
-                step_set = {0.0, first_layer_height_cents, round(absolute_max_z * 100)}
+                step_set = {0.0, first_layer_height_cents, absolute_max_z_cents}
 
                 triangles = mesh.find('{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}triangles')
                 for triangle in triangles:
@@ -455,6 +483,8 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                 for step_index in range(1, step_list_length):
                     top_layers.append(round(step_list[step_index] / 100, round_to))
 
+                top_layers = list(set(top_layers))
+
                 if args.thin_top_layer:
                     for step_index in range(1, step_list_length):
                         if step_list[step_index] < first_layer_height_cents + min_layer_height_cents:
@@ -477,20 +507,29 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                 max_optimum_avg_layer_height_index = 0
 
                 if args.avg > 0.0 or not args.optimize:
-                    layer_steps_list.append(calculate_layer_heights(lh, absolute_max_z))
+                    calculated_layer_heights = calculate_layer_heights(lh, absolute_max_z, step_list)
+                    if args.debug:
+                        print("calculated_layer_heights: ", calculated_layer_heights.get_list)
+
+                    layer_steps_list.append(calculated_layer_heights)
+                    if args.debug:
+                        print("layer_steps_list.append(", "calculate_layer_heights(", lh, ", ", absolute_max_z, ",", step_list, "))")
+
                     if len(layer_steps_list[-1].list_lh[1:]) > 0:
-                        min_layer_difference = round(
-                            max(layer_steps_list[-1].list_lh[1:]) - min(layer_steps_list[-1].list_lh[1:]), round_to)
+                        min_layer_difference = round(max(layer_steps_list[-1].list_lh[1:]) - min(layer_steps_list[-1].list_lh[1:]), round_to)
                     else:
                         min_layer_difference = 0
                     max_optimum_avg_layer_height_index = len(layer_steps_list) - 1
                     max_optimum_avg_layer_height = avg_layer_height * 100
 
                     print("Fixed Average Layer Height: " + str(max_optimum_avg_layer_height / 100))
+                    if args.debug:
+                        print("layer_steps_list: ")
+                        print(layer_steps_list[max_optimum_avg_layer_height_index].get_list)
                 else:
                     for lh in range(int(min_layer_height * 100), int(max_layer_height * 100), int(z_step_mm * 100)):
 
-                        layer_steps_list.append(calculate_layer_heights(lh, absolute_max_z))
+                        layer_steps_list.append(calculate_layer_heights(lh, absolute_max_z, step_list))
                         if len(layer_steps_list[-1].list_lh) <= 1:
                             min_layer_difference = 0
                             max_optimum_avg_layer_height_index = len(layer_steps_list) - 1
@@ -526,14 +565,17 @@ with tempfile.TemporaryDirectory() as tmpdirname:
                     rng.set('min_z', str(line[0]))
                     rng.set('max_z', str(line[1]))
 
+                    # set the default extruder option to 0 (could be a problem with multiple extruders)
                     option1 = ET.SubElement(rng, 'option')
                     option1.set('opt_key', 'extruder')
                     option1.text = '0'
 
+                    # add the layer height option
                     option2 = ET.SubElement(rng, 'option')
                     option2.set('opt_key', 'layer_height')
                     option2.text = str(line[2])
 
+                    # if the line is in the single_perimeter_list, add the single perimeter option
                     if line[0] in layer_steps_list[max_optimum_avg_layer_height_index].single_perimeter_list:
                         option3 = ET.SubElement(rng, 'option')
                         option3.set('opt_key', 'perimeters')
