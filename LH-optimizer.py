@@ -245,7 +245,6 @@ class LayerHeightList:
         if args.debug:
             print("list_tmp: ", list_tmp)
             print("top_layers: ", top_layers)
-            print("round(last_block_end, round_to): ", round(last_block_end, round_to))
             print("single_perimeter_list: ", self.single_perimeter_list)
         return list_tmp
 
